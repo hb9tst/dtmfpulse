@@ -5,7 +5,7 @@
  \file    dtmfpulse.c
  \brief   PIC16-based pulse-to-DTMF converter with memories
  \version 1.5
- \date    August 2015
+ \date    August 2015, modified June 2022
  \author  Alessandro Crespi <alessandro.crespi@epfl.ch>
 */
 
@@ -45,6 +45,9 @@
 
 #define SWITCH     (PORTCbits.RC0)
 #define DIAL       (PORTCbits.RC1)
+
+// comment to disable extended features (*/#, redial and memories)
+#define USE_EXTENDED
 
 #define TONE_LEN   6942    // DTMF tone length in PWM periods (= 40 us)
 #define TONE_LEN_M 6000    // DTMF tone length when dialling from memory/redial
@@ -108,7 +111,7 @@ void init()
   TMR4IF = 0;
   PEIE = 1;
   ei();
-  
+
   CCPR1L = 0;
 }
 
@@ -237,10 +240,12 @@ int8_t get_digit()
   __delay_ms(10);
   while (SWITCH == 0) {
     CLRWDT();
+#ifdef USE_EXTENDED
     if (c == 0 && time_counter == SHIFT_TIME) {
       shift = 1;
       do_sine(BEEP_FREQ, BEEP_LEN);
     }
+ #endif
     if (DIAL == 0 && state == 1) {
       state = 0;
       c++;
@@ -254,13 +259,16 @@ int8_t get_digit()
   if (state == 1) {
     c++;
   }
+#ifdef USE_EXTENDED
   // time based "shift" to have more than 10 digits (*, #, redial, memories)
   if (shift) {
     c += 10;
   }
+#endif
   return c;
 }
 
+#ifdef USE_EXTENDED
 /// \brief dials the contents of a memory
 /// \warning no check of parameter validity
 void dial_memory(uint8_t mem)
@@ -289,6 +297,7 @@ void save_memory(uint8_t mem, uint8_t* data, const uint8_t len)
     write_eeprom(mem + len, 0xff);
   }
 }
+#endif
 
 int main()
 {
@@ -306,10 +315,14 @@ int main()
       if (digit <= 12) {
         do_digit(digit, TONE_LEN);             // makes the DTMF tone of the digit
         last[cnt] = digit;
+#ifdef USE_EXTENDED        
         write_eeprom(cnt, digit);              // updates memory 0 with each new digit
         write_eeprom(cnt + 1, 0xff);           // (for last number redial)
+#endif
         cnt++;
-      } else if (digit == 20) {
+      }
+#ifdef USE_EXTENDED      
+      else if (digit == 20) {
         dial_memory(0);                        // dial memory 0 (= last dialled number)
       } else if (digit >= 13) {
         if (cnt == 0) {
@@ -327,6 +340,7 @@ int main()
           }
         }
       }
+#endif      
     }
     CLRWDT();
   }
